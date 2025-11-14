@@ -1,0 +1,22 @@
+{
+  "name": "llm-check",
+  "version": "0.0.0",
+  "description": "Test LLM APIs with MCP tools - benchmark reliability and prompt adherence",
+  "type": "module",
+  "bin": {
+    "llm-check": "./llm-check.ts"
+  },
+  "keywords": [
+    "llm",
+    "mcp",
+    "testing",
+    "benchmark",
+    "openai",
+    "model-context-protocol"
+  ],
+  "author": "Glen Maddern",
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
