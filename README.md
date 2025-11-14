@@ -26,10 +26,10 @@ Requirements:
 
 Usage:
   Single run:
-    bun run mcp-check.ts -p "<prompt>" -m <model> -S "<label>:<url>" [-S "<label>:<url>" ...] [-x "<expectation>" ...]
+    bunx llm-check -p "<prompt>" -m <model> -S "<label>:<url>" [-S "<label>:<url>" ...] [-x "<expectation>" ...]
 
   Benchmark mode:
-    bun run mcp-check.ts -p "<prompt>" -m <model> -S "<label>:<url>" -n <runs> [-c <concurrency>] [-x "<expectation>" ...]
+    bunx llm-check -p "<prompt>" -m <model> -S "<label>:<url>" -n <runs> [-c <concurrency>] [-x "<expectation>" ...]
 
 Arguments:
   -p <prompt>          Prompt text to send to the API (required)
@@ -47,14 +47,14 @@ Arguments:
 
 Examples:
   # Single run with multiple servers
-  bun run mcp-check.ts -p "What is the title?" \
+  bunx llm-check -p "What is the title?" \
     -m openai/gpt-oss-20b \
     -S "PPT:http://localhost:9001/sse" \
     -S "Word:http://localhost:9003/sse" \
     -x "slide"
 
   # Benchmark with custom headers
-  bun run mcp-check.ts -p "What is trending?" \
+  bunx llm-check -p "What is trending?" \
     -m emberglow/small \
     -S "HF:https://huggingface.co/mcp" \
     --header "Groq-Model-Version: mcp-in-progress-preview" \
