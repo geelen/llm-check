@@ -4,11 +4,13 @@ Test LLM API responses for reliability and prompt adherence when MCP (Model Cont
 
 ## Installation
 
-Requires [Bun](https://bun.sh) runtime.
+No installation required. Use `bunx` to run directly:
 
 ```bash
-bun install
+bunx llm-check --help
 ```
+
+Requires [Bun](https://bun.sh) runtime.
 
 ## Usage
 
