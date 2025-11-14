@@ -1,6 +1,6 @@
 {
   "name": "llm-check",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Test LLM APIs with MCP tools - benchmark reliability and prompt adherence",
   "type": "module",
   "bin": {
