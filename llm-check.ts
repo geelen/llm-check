@@ -1,55 +1,28 @@
 #!/usr/bin/env bun
 
 import { parseArgs } from "util";
-import { mkdtemp, mkdir } from "fs/promises";
+import { mkdtemp, mkdir, readFile } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
-const USAGE = `MCP Check - Test Groq Responses API with MCP tools
-
-Tests prompt adherence and reliability when MCP tools are in the context.
-Supports single run (manual verification) and benchmark mode (statistical analysis).
-
-Requirements:
-  - Bun runtime (https://bun.sh)
-  - Environment variables: GROQ_API_KEY
-
-Usage:
-  Single run:
-    bun run mcp-check.ts -p "<prompt>" -m <model> -S "<label>:<url>" [-S "<label>:<url>" ...] [-x "<expectation>" ...]
-
-  Benchmark mode:
-    bun run mcp-check.ts -p "<prompt>" -m <model> -S "<label>:<url>" -n <runs> [-c <concurrency>] [-x "<expectation>" ...]
-
-Arguments:
-  -p <prompt>          Prompt text to send to the API (required)
-  -m <model>           Model to use (required)
-                       Common models: openai/gpt-oss-20b, openai/gpt-oss-120b, emberglow/small
-  -S <label:url>       MCP server as "label:url" (multiple allowed, optional)
-  -x <expectation>     Expected text in <answer> block (multiple allowed)
-  -n <count>           Number of runs (default: 1)
-  -c <concurrency>     Number of concurrent runs (default: 1)
-  --prod               Use production API (https://api.groq.com) instead of localhost
-  --base-url <url>     API base URL (default: http://localhost:8000, or https://api.groq.com with --prod)
-  --endpoint <path>    API endpoint (default: /api/openai/v1/chat/completions)
-  --header <header>    Custom header (multiple allowed)
-  --help               Show this help message
-
-Examples:
-  # Single run with multiple servers
-  bun run mcp-check.ts -p "What is the title?" \\
-    -m openai/gpt-oss-20b \\
-    -S "PPT:http://localhost:9001/sse" \\
-    -S "Word:http://localhost:9003/sse" \\
-    -x "slide"
-
-  # Benchmark with custom headers
-  bun run mcp-check.ts -p "What is trending?" \\
-    -m emberglow/small \\
-    -S "HF:https://huggingface.co/mcp" \\
-    --header "Groq-Model-Version: mcp-in-progress-preview" \\
-    -n 100 -c 8
-`;
+async function loadUsageFromReadme(): Promise<string> {
+  try {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const readmePath = join(__dirname, "README.md");
+    const readme = await readFile(readmePath, "utf-8");
+    
+    // Extract content between ```\n and \n```
+    const match = readme.match(/```\n([\s\S]*?)\n```/);
+    if (match && match[1]) {
+      return match[1];
+    }
+    
+    return "Error: Could not parse usage from README.md";
+  } catch (error) {
+    return "Error: Could not read README.md";
+  }
+}
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const GREEN = "\x1b[32m";
@@ -60,7 +33,9 @@ const RESET = "\x1b[0m";
 const SUCCESS = `${GREEN}✓${RESET}`;
 const FAILURE = `${RED}✗${RESET}`;
 
-function printHelp(): void {
+async function printHelp(): Promise<void> {
+  const USAGE = await loadUsageFromReadme();
+  
   const colorized = USAGE.replace(
     /^(MCP Check.*?)$/m,
     `${BLUE}$1${RESET}`,
@@ -590,7 +565,7 @@ async function main() {
   });
 
   if (values.help) {
-    printHelp();
+    await printHelp();
     process.exit(0);
   }
 
