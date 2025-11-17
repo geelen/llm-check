@@ -12,10 +12,10 @@ async function loadUsageFromReadme(): Promise<string> {
     const readmePath = join(__dirname, "README.md");
     const readme = await readFile(readmePath, "utf-8");
     
-    // Extract content between ```\n and \n```
-    const match = readme.match(/```\n([\s\S]*?)\n```/);
-    if (match && match[1]) {
-      return match[1];
+    // Extract the usage section - find the ## Usage heading and then the code block after it
+    const usageMatch = readme.match(/## Usage\s*\n\s*```\n([\s\S]*?)\n```/);
+    if (usageMatch && usageMatch[1]) {
+      return usageMatch[1];
     }
     
     return "Error: Could not parse usage from README.md";
