@@ -756,6 +756,26 @@ async function main() {
     serverList,
   };
 
+  // Pre-flight check for mcp-discovery
+  if (mcpDiscovery) {
+    try {
+      const proc = Bun.spawn(["bunx", "mcp-discovery@latest", "--help"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      
+      const exitCode = await proc.exited;
+      
+      if (exitCode !== 0) {
+        console.error(`${RED}Error: Failed to run mcp-discovery. Please ensure it's available.${RESET}`);
+        process.exit(1);
+      }
+    } catch (error) {
+      console.error(`${RED}Error: Failed to run mcp-discovery: ${error}${RESET}`);
+      process.exit(1);
+    }
+  }
+
   if (runs === 1) {
     await singleRun(config);
   } else {
