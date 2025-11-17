@@ -65,6 +65,8 @@ interface Config {
   baseUrl: string;
   endpoint: string;
   customHeaders: Record<string, string>;
+  mcpDiscovery?: string;
+  serverList?: string;
 }
 
 interface RunOutcome {
@@ -215,6 +217,10 @@ async function runOnce(
   config: Config,
   runNumber?: number,
 ): Promise<RunOutcome> {
+  if (config.mcpDiscovery) {
+    return runOnceMcpDiscovery(config, runNumber);
+  }
+
   const payload = buildPayload(config.message, config.servers, config.model);
   const url = `${config.baseUrl}${config.endpoint}`;
 
@@ -296,14 +302,88 @@ async function runOnce(
   }
 }
 
+async function runOnceMcpDiscovery(
+  config: Config,
+  runNumber?: number,
+): Promise<RunOutcome> {
+  try {
+    const args = [
+      "bunx",
+      "mcp-discovery",
+      config.mcpDiscovery!,
+      "-p",
+      config.message,
+      "-m",
+      config.model,
+    ];
+
+    if (config.serverList) {
+      args.push("-s", config.serverList);
+    }
+
+    const proc = Bun.spawn(args, {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const chunks: Uint8Array[] = [];
+    const reader = proc.stdout.getReader();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+
+    const exitCode = await proc.exited;
+    const responseBody = Buffer.concat(chunks).toString();
+
+    // Determine pass/fail
+    let pass = false;
+    const answer = extractAnswer(responseBody);
+
+    if (config.expectations.length > 0) {
+      if (!answer) {
+        pass = false;
+      } else {
+        const { allFound } = checkExpectations(answer, config.expectations);
+        pass = allFound;
+      }
+    } else {
+      // If no expectations, check exit code
+      pass = exitCode === 0;
+    }
+
+    return {
+      run: runNumber || 1,
+      httpStatus: exitCode === 0 ? 200 : 500,
+      pass,
+      responseBody,
+    };
+  } catch (error) {
+    return {
+      run: runNumber || 1,
+      httpStatus: 0,
+      pass: false,
+      error: `Error executing mcp-discovery: ${error}`,
+    };
+  }
+}
+
 async function singleRun(config: Config): Promise<void> {
-  const payload = buildPayload(config.message, config.servers, config.model);
-  const url = `${config.baseUrl}${config.endpoint}`;
-  printCurlTemplate(payload, url, config.customHeaders);
+  if (config.mcpDiscovery) {
+    console.log(`\n${BLUE}Executing mcp-discovery command:${RESET}\n`);
+    const serverArg = config.serverList ? ` -s ${config.serverList}` : '';
+    console.log(`bunx mcp-discovery ${config.mcpDiscovery} -p "${config.message}" -m ${config.model}${serverArg}\n`);
+  } else {
+    const payload = buildPayload(config.message, config.servers, config.model);
+    const url = `${config.baseUrl}${config.endpoint}`;
+    printCurlTemplate(payload, url, config.customHeaders);
+  }
 
   if (config.expectations.length === 0) {
     console.log(
-      `${YELLOW}Note: No expectations provided. Pass/fail based on HTTP status only.${RESET}\n`,
+      `${YELLOW}Note: No expectations provided. Pass/fail based on ${config.mcpDiscovery ? "exit code" : "HTTP status"} only.${RESET}\n`,
     );
   }
 
@@ -358,9 +438,6 @@ async function singleRun(config: Config): Promise<void> {
 }
 
 async function benchmarkRun(config: Config): Promise<void> {
-  const payload = buildPayload(config.message, config.servers, config.model);
-  const url = `${config.baseUrl}${config.endpoint}`;
-
   const tempDir = await mkdtemp(join(tmpdir(), "mcp-check-"));
   const successDir = join(tempDir, "success");
   const failDir = join(tempDir, "fail");
@@ -370,11 +447,19 @@ async function benchmarkRun(config: Config): Promise<void> {
 
   console.log(`\n📁 Logs directory: ${tempDir}\n`);
 
-  printCurlTemplate(payload, url, config.customHeaders);
+  if (config.mcpDiscovery) {
+    console.log(`\n${BLUE}Executing mcp-discovery command:${RESET}\n`);
+    const serverArg = config.serverList ? ` -s ${config.serverList}` : '';
+    console.log(`bunx mcp-discovery ${config.mcpDiscovery} -p "${config.message}" -m ${config.model}${serverArg}\n`);
+  } else {
+    const payload = buildPayload(config.message, config.servers, config.model);
+    const url = `${config.baseUrl}${config.endpoint}`;
+    printCurlTemplate(payload, url, config.customHeaders);
+  }
 
   if (config.expectations.length === 0) {
     console.log(
-      `${YELLOW}Note: No expectations provided. Pass/fail based on HTTP status only.${RESET}\n`,
+      `${YELLOW}Note: No expectations provided. Pass/fail based on ${config.mcpDiscovery ? "exit code" : "HTTP status"} only.${RESET}\n`,
     );
   } else {
     console.log(
@@ -551,6 +636,7 @@ async function main() {
     options: {
       p: { type: "string", short: "p" },
       m: { type: "string", short: "m" },
+      s: { type: "string", short: "s" },
       S: { type: "string", short: "S", multiple: true },
       x: { type: "string", short: "x", multiple: true },
       n: { type: "string", short: "n", default: "1" },
@@ -559,6 +645,7 @@ async function main() {
       "base-url": { type: "string" },
       endpoint: { type: "string", default: "/api/openai/v1/chat/completions" },
       header: { type: "string", multiple: true },
+      "mcp-discovery": { type: "string" },
       help: { type: "boolean" },
     },
     strict: false,
@@ -569,14 +656,34 @@ async function main() {
     process.exit(0);
   }
 
+  const mcpDiscovery = values["mcp-discovery"] as string | undefined;
+
+  // Validate incompatible options with --mcp-discovery
+  if (mcpDiscovery) {
+    const incompatibleOptions = [];
+    if (values.S && (values.S as string[]).length > 0) incompatibleOptions.push("-S");
+    if (values.prod) incompatibleOptions.push("--prod");
+    if (values["base-url"]) incompatibleOptions.push("--base-url");
+    if (values.endpoint !== "/api/openai/v1/chat/completions") incompatibleOptions.push("--endpoint");
+    if (values.header && (values.header as string[]).length > 0) incompatibleOptions.push("--header");
+
+    if (incompatibleOptions.length > 0) {
+      console.error(
+        `${RED}Error: ${incompatibleOptions.join(", ")} cannot be used with --mcp-discovery${RESET}\n`,
+      );
+      process.exit(1);
+    }
+  }
+
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
+  if (!apiKey && !mcpDiscovery) {
     console.error(`${RED}Error: GROQ_API_KEY must be set.${RESET}`);
     process.exit(1);
   }
 
   const message = values.p as string | undefined;
   const serverSpecs = (values.S as string[] | undefined) || [];
+  const serverList = values.s as string | undefined;
   const model = values.m as string | undefined;
 
   if (!message || !model) {
@@ -645,6 +752,8 @@ async function main() {
     baseUrl,
     endpoint: values.endpoint as string,
     customHeaders,
+    mcpDiscovery,
+    serverList,
   };
 
   if (runs === 1) {
