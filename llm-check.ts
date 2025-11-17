@@ -302,6 +302,70 @@ async function runOnce(
   }
 }
 
+let poolDaemonProcess: any = null;
+const POOL_PORT = 7357;
+const POOL_URL = `http://localhost:${POOL_PORT}`;
+
+async function ensurePoolDaemon(serverList: string, replicas: number = 20): Promise<void> {
+  // Check if pool is already running
+  try {
+    const response = await fetch(`${POOL_URL}/status`);
+    if (response.ok) {
+      console.error(`Pool daemon already running on port ${POOL_PORT}`);
+      return;
+    }
+  } catch {
+    // Pool not running, start it
+  }
+
+  console.error(`Starting pool daemon with ${replicas} replicas per server...`);
+  
+  poolDaemonProcess = Bun.spawn([
+    "bunx",
+    "mcp-discovery",
+    "pool",
+    "-s",
+    serverList,
+    "--replicas",
+    String(replicas),
+    "--port",
+    String(POOL_PORT),
+  ], {
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  // Wait for pool to be ready
+  for (let i = 0; i < 30; i++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const response = await fetch(`${POOL_URL}/status`);
+      if (response.ok) {
+        console.error(`Pool daemon ready\n`);
+        return;
+      }
+    } catch {
+      // Keep waiting
+    }
+  }
+
+  throw new Error("Pool daemon failed to start within 30 seconds");
+}
+
+async function shutdownPoolDaemon(): Promise<void> {
+  if (!poolDaemonProcess) return;
+
+  try {
+    await fetch(`${POOL_URL}/shutdown`, { method: "POST" });
+    await new Promise(resolve => setTimeout(resolve, 500));
+  } catch {
+    // Ignore
+  }
+
+  poolDaemonProcess.kill();
+  poolDaemonProcess = null;
+}
+
 async function runOnceMcpDiscovery(
   config: Config,
   runNumber?: number,
@@ -317,8 +381,15 @@ async function runOnceMcpDiscovery(
       config.model,
     ];
 
+    // If serverList is provided, pass it through
+    // The pool will have been started with the same server list
     if (config.serverList) {
       args.push("-s", config.serverList);
+    }
+
+    // Add --via-pool flag if running benchmark mode (runs > 1)
+    if (config.runs > 1) {
+      args.push("--via-pool", POOL_URL);
     }
 
     const proc = Bun.spawn(args, {
@@ -438,6 +509,12 @@ async function singleRun(config: Config): Promise<void> {
 }
 
 async function benchmarkRun(config: Config): Promise<void> {
+  // Start pool daemon if using mcp-discovery
+  if (config.mcpDiscovery && config.serverList) {
+    const replicas = Math.max(config.concurrency, 20);
+    await ensurePoolDaemon(config.serverList, replicas);
+  }
+
   const tempDir = await mkdtemp(join(tmpdir(), "mcp-check-"));
   const successDir = join(tempDir, "success");
   const failDir = join(tempDir, "fail");
@@ -448,9 +525,12 @@ async function benchmarkRun(config: Config): Promise<void> {
   console.log(`\n📁 Logs directory: ${tempDir}\n`);
 
   if (config.mcpDiscovery) {
-    console.log(`\n${BLUE}Executing mcp-discovery command:${RESET}\n`);
+    console.log(`\n${BLUE}Using mcp-discovery with pool:${RESET}\n`);
     const serverArg = config.serverList ? ` -s ${config.serverList}` : '';
-    console.log(`bunx mcp-discovery ${config.mcpDiscovery} -p "${config.message}" -m ${config.model}${serverArg}\n`);
+    console.log(`  Strategy: ${config.mcpDiscovery}`);
+    console.log(`  Model: ${config.model}`);
+    console.log(`  Servers: ${config.serverList || "(none)"}`);
+    console.log(`  Pool: ${POOL_URL}\n`);
   } else {
     const payload = buildPayload(config.message, config.servers, config.model);
     const url = `${config.baseUrl}${config.endpoint}`;
@@ -626,6 +706,11 @@ async function benchmarkRun(config: Config): Promise<void> {
   }
 
   console.log("\n" + "═".repeat(60) + "\n");
+
+  // Shutdown pool daemon if we started it
+  if (config.mcpDiscovery && config.serverList) {
+    await shutdownPoolDaemon();
+  }
 
   process.exit(fails > 0 ? 1 : 0);
 }

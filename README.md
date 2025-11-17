@@ -2,6 +2,8 @@
 
 Test LLM API responses for reliability and prompt adherence when MCP (Model Context Protocol) tools are in the context. Run single tests with manual verification or benchmark mode for statistical analysis.
 
+Integrates with [mcp-discovery](https://github.com/glenmaddern/mcp-discovery) for efficient benchmarking with STDIO MCP servers using process pooling.
+
 ## Installation
 
 No installation required. Use `bunx` to run directly:
