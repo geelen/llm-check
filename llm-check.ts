@@ -758,6 +758,7 @@ async function main() {
 
   // Pre-flight check for mcp-discovery
   if (mcpDiscovery) {
+    console.log(`${BLUE}Checking mcp-discovery availability...${RESET}`);
     try {
       const proc = Bun.spawn(["bunx", "mcp-discovery@latest", "--help"], {
         stdout: "pipe",
@@ -770,6 +771,8 @@ async function main() {
         console.error(`${RED}Error: Failed to run mcp-discovery. Please ensure it's available.${RESET}`);
         process.exit(1);
       }
+      
+      console.log(`${GREEN}✓${RESET} mcp-discovery ready\n`);
     } catch (error) {
       console.error(`${RED}Error: Failed to run mcp-discovery: ${error}${RESET}`);
       process.exit(1);
